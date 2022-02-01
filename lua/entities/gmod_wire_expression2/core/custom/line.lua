@@ -12,6 +12,7 @@ local LineLink = {}
 
 local KEY = 0
 
+
 local function validIndex(...)
     local args = { ... }
 
@@ -28,8 +29,10 @@ end
 
 local function storeIndex(self, index)
     KEY = KEY + 1
+
     IndexDictionnary[self] = IndexDictionnary[self] or {}
     IndexDictionnary[self][index] = KEY
+
     return KEY
 end
 
@@ -85,6 +88,12 @@ end)
 -- POINTCREATE
 
 local function pointSpawn(chip, index, pos, parent)
+    if not validIndex(index) then return end
+
+    IndexDictionnary[chip.entity:EntIndex()] = IndexDictionnary[chip.entity:EntIndex()] or {}
+    if IndexDictionnary[chip.entity:EntIndex()][index] then return end
+    if table.Count(IndexDictionnary[chip.entity:EntIndex()]) >= MAX_POINTS:GetInt() then return end
+
     AnchorIndex[chip.entity:EntIndex()] = AnchorIndex[chip.entity:EntIndex()] or {}
     local auto_index = storeIndex(chip.entity:EntIndex(), index)
 
@@ -123,26 +132,10 @@ end
 __e2setcost(10)
 
 e2function void pointCreate(index, vector pos)
-    if not validIndex(index) then return end
-
-    local chip = self.entity:EntIndex()
-
-    IndexDictionnary[chip] = IndexDictionnary[chip] or {}
-    if IndexDictionnary[chip][index] then return end
-    if table.Count(IndexDictionnary[chip]) >= MAX_POINTS:GetInt() then return end
-
     pointSpawn(self, index, Vector(pos[1], pos[2], pos[3]))
 end
 
 e2function void pointCreate(index, vector pos, entity parent)
-    if not validIndex(index) then return end
-
-    local chip = self.entity:EntIndex()
-
-    IndexDictionnary[chip] = IndexDictionnary[chip] or {}
-    if IndexDictionnary[chip][index] then return end
-    if table.Count(IndexDictionnary[chip]) >= MAX_POINTS:GetInt() then return end
-
     pointSpawn(self, index, Vector(pos[1], pos[2], pos[3]), parent)
 end
 

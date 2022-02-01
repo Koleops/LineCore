@@ -19,10 +19,7 @@ end
 function ENT:Initialize()
     local chip = self:GetChip()
 
-    if not IsValid(chip) then
-        self:Remove()
-        return
-    end
+    if not IsValid(chip) then self:Remove() return end
 
     AnchorIndex[chip:EntIndex()] = AnchorIndex[chip:EntIndex()] or {}
     AnchorIndex[chip:EntIndex()][self:GetIndex()] = self
