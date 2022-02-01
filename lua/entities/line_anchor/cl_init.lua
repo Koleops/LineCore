@@ -32,6 +32,10 @@ function ENT:OnRemove()
     local expression2_index = self:GetExpression2_index()
     local index = self:GetEntity_index()
 
+    if LineIndex[expression2_index] then
+        LineIndex[expression2_index][index] = nil
+    end
+
     if LineLink[expression2_index] then
         for uuid,_ in pairs(LineLink[expression2_index]) do
             local x, y = SzudzikUnpair(uuid)
@@ -41,9 +45,6 @@ function ENT:OnRemove()
             end
         end
     end
-
-    if not LineIndex[expression2_index] then return end
-    LineIndex[expression2_index][index] = nil
 end
 
 /* ------------------------------ Network ------------------------------ */
@@ -111,8 +112,14 @@ hook.Add("PostDrawOpaqueRenderables", "LineCoreHook", function()
         for uuid, data in pairs(lines) do
             local index, index2 = SzudzikUnpair(uuid)
             local ent, ent2 = LineIndex[_][index], LineIndex[_][index2]
-            if not ent or not ent2 then continue end
+            if not ent or not IsValid(ent) or not ent2 or not IsValid(ent2) then continue end
             render.DrawLine(ent:GetPos(), ent2:GetPos(), data.color or Color(255, 255, 255), not tobool(data.zbuffer))
         end
     end
+end)
+
+/* ------------------------------ Concommand ------------------------------ */
+
+concommand.Add("cl_linecore_clear_lines", function()
+    LineLink = {}
 end)

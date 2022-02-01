@@ -1,7 +1,7 @@
 E2Lib.RegisterExtension("LineCore", true, "")
 
-CreateConVar("linecore_maxlines", 400, FCVAR_ARCHIVE, "Limit the maximum number of lines an E2 can create", 1)
-CreateConVar("linecore_maxpoints", 80, FCVAR_ARCHIVE, "Limit the maximum of points an E2 can create", 1)
+local MAX_LINES = CreateConVar("linecore_maxlines", 400, FCVAR_ARCHIVE, "Limit the maximum number of lines an E2 can create", 1)
+local MAX_POINTS = CreateConVar("linecore_maxpoints", 80, FCVAR_ARCHIVE, "Limit the maximum of points an E2 can create", 1)
 
 E2Lib.registerConstant("MAX_LINES", GetConVar("linecore_maxlines"):GetInt() )
 E2Lib.registerConstant("MAX_POINTS", GetConVar("linecore_maxpoints"):GetInt() )
@@ -35,19 +35,11 @@ local function SzudzikUnpair(z)
     return x, y
 end
 
-local function canCreatePoints(self)
-    return table.Count(IndexDictionnary[self]) < GetConVar("linecore_maxpoints"):GetInt()
-end
-
-local function canCreateLines(self)
-    return table.Count(LineLink[self]) < GetConVar("linecore_maxlines"):GetInt()
-end
-
 /* ------------------------------ Network ------------------------------ */
 
 util.AddNetworkString("LineCoreSync")
 
-timer.Create("LineCoreSync", 10, 0, function()
+timer.Create("LineCoreSync", 60, 0, function()
     local count = 0
     for _,lines in pairs(LineLink) do
         count = count + table.Count(lines)
@@ -68,16 +60,17 @@ net.Receive("LineCoreSync", function(len, ply)
     net.Send(ply)
 end)
 
-
 /* ------------------------------ OnRemove() ------------------------------ */
 
 util.AddNetworkString("LineCoreClean")
 
 registerCallback("destruct", function(self)
+    if not self.entity then return end
     local expression2_index = self.entity:EntIndex()
 
-    if LineIndex[expression2_index] then 
+    if LineIndex[expression2_index] then
         for _,ent in pairs(LineIndex[expression2_index]) do
+            if not IsValid(ent) then continue end
             ent:Remove()
         end
     end
@@ -99,7 +92,7 @@ e2function void createPoint(index, vector pos)
     if index != math.floor(index) then return end
     local expression2_index = self.entity:EntIndex()
     IndexDictionnary[expression2_index] = IndexDictionnary[expression2_index] or {}
-    if not canCreatePoints(expression2_index) then return end
+    if table.Count(IndexDictionnary[expression2_index]) >= MAX_POINTS:GetInt() then return end
     if IndexDictionnary[expression2_index][index] then return end
     local pos = Vector(pos[1], pos[2], pos[3])
     local auto_index = StoreIndex(expression2_index, index)
@@ -117,7 +110,7 @@ e2function void createPoint(index, vector pos, entity parent)
     if index != math.floor(index) then return end
     local expression2_index = self.entity:EntIndex()
     IndexDictionnary[expression2_index] = IndexDictionnary[expression2_index] or {}
-    if not canCreatePoints(expression2_index) then return end
+    if table.Count(IndexDictionnary[expression2_index]) >= MAX_POINTS:GetInt() then return end
     if IndexDictionnary[expression2_index][index] then return end
     if not IsValid(parent) then return end
     local pos = Vector(pos[1], pos[2], pos[3])
@@ -140,8 +133,7 @@ __e2setcost(0)
 e2function void parentPoint(index, entity parent)
     if index != math.floor(index) then return end
     local expression2_index = self.entity:EntIndex()
-    if not IndexDictionnary[expression2_index] then return end
-    if not IndexDictionnary[expression2_index][index] then return end
+    if not IndexDictionnary[expression2_index] or not IndexDictionnary[expression2_index][index] then return end
     if not IsValid(parent) then return end
     local auto_index = IndexDictionnary[expression2_index][index]
     local ent = LineIndex[expression2_index][auto_index]
@@ -151,10 +143,11 @@ end
 e2function void unparentPoint(index)
     if index != math.floor(index) then return end
     local expression2_index = self.entity:EntIndex()
-    if not IndexDictionnary[expression2_index] then return end
-    if not IndexDictionnary[expression2_index][index] then return end
+    if not IndexDictionnary[expression2_index] or not IndexDictionnary[expression2_index][index] then return end
     local auto_index = IndexDictionnary[expression2_index][index]
+    if not LineIndex[expression2_index] or not LineIndex[expression2_index][auto_index] then return end
     local ent = LineIndex[expression2_index][auto_index]
+    if not IsValid(ent) then return end
         ent:SetParent(NULL)
 end
 
@@ -168,8 +161,10 @@ e2function void pointSetPos(index, vector pos)
     if not IndexDictionnary[expression2_index] then return end
     if not IndexDictionnary[expression2_index][index] then return end
     local auto_index = IndexDictionnary[expression2_index][index]
+    if not LineIndex[expression2_index] or not LineIndex[expression2_index][auto_index] then return end
+    if not IsValid(ent) then return end
     local pos = Vector(pos[1], pos[2], pos[3])
-    local ent = LineIndex[expression2_index][auto_index]  
+    local ent = LineIndex[expression2_index][auto_index]
         ent:SetPos(pos)
 end
 
@@ -180,10 +175,11 @@ __e2setcost(0)
 e2function vector pointGetPos(index)
     if index != math.floor(index) then return end
     local expression2_index = self.entity:EntIndex()
-    if not IndexDictionnary[expression2_index] then return end
-    if not IndexDictionnary[expression2_index][index] then return end
+    if not IndexDictionnary[expression2_index] or not IndexDictionnary[expression2_index][index] then return end
     local auto_index = IndexDictionnary[expression2_index][index]
-    local ent = LineIndex[expression2_index][auto_index]  
+    if not LineIndex[expression2_index] or not LineIndex[expression2_index][auto_index] then return end
+    local ent = LineIndex[expression2_index][auto_index]
+    if not IsValid(ent) then return end
     return ent:GetPos()
 end
 
@@ -194,10 +190,9 @@ __e2setcost(0)
 e2function void removePoint(index)
     if index != math.floor(index) then return end
     local expression2_index = self.entity:EntIndex()
-    if not IndexDictionnary[expression2_index] then return end
-    if not IndexDictionnary[expression2_index][index] then return end
+    if not IndexDictionnary[expression2_index] or not IndexDictionnary[expression2_index][index] then return end
     local auto_index = IndexDictionnary[expression2_index][index]
-    if LineIndex[expression2_index][auto_index] then
+    if LineIndex[expression2_index][auto_index] and IsValid(LineIndex[expression2_index][auto_index]) then
         local ent = LineIndex[expression2_index][auto_index]
             ent:Remove()
     end
@@ -221,15 +216,16 @@ local Buffer = {}
 
 util.AddNetworkString("LineCoreCreateLine")
 
-timer.Create("LineCoreBuffer", 1, 0, function() 
+timer.Create("LineCoreBuffer", 1, 0, function()
     if table.IsEmpty(Buffer) then return end
     local data = {}
     for expression2_index,__ in pairs(Buffer) do
         if not IndexDictionnary[expression2_index] then continue end
-        for _,w in pairs(__) do 
-            if not canCreateLines(expression2_index) then return end
-            local auto_index, auto_index2 = IndexDictionnary[expression2_index][w.index], IndexDictionnary[expression2_index][w.index2]  
-            if not auto_index or not auto_index2 then return end     
+        for _,w in pairs(__) do
+            LineLink[expression2_index] = LineLink[expression2_index] or {}
+            if table.Count(LineLink[expression2_index]) >= MAX_LINES:GetInt() then continue end
+            local auto_index, auto_index2 = IndexDictionnary[expression2_index][w.index], IndexDictionnary[expression2_index][w.index2]
+            if not auto_index or not auto_index2 then continue end
             local uuid = SzudzikPair(auto_index, auto_index2)
             data[expression2_index] = data[expression2_index] or {}
             table.insert(data[expression2_index], {
@@ -238,7 +234,6 @@ timer.Create("LineCoreBuffer", 1, 0, function()
                 zbuffer = w.zbuffer or nil
             })
 
-            LineLink[expression2_index] = LineLink[expression2_index] or {}
             LineLink[expression2_index][uuid] = {
                 color = w.color or nil,
                 zbuffer = w.zbuffer or nil
@@ -319,7 +314,6 @@ e2function void lineSetColor(index, index2, vector color)
         net.WriteUInt(expression2_index, 14)
         net.WriteUInt(uuid, 32)
         net.WriteColor(color, false)
-        print(net.BytesWritten())
     net.Broadcast()
 
     LineLink[expression2_index][uuid].color = color
@@ -332,8 +326,23 @@ __e2setcost(0)
 e2function void lineClear()
     local expression2_index = self.entity:EntIndex()
     LineLink[expression2_index] = nil
- 
+
     net.Start("LineCoreClean")
         net.WriteUInt(expression2_index, 14)
     net.Broadcast()
+end
+
+/* ------------------------------ pair() ------------------------------ */
+
+__e2setcost(0)
+
+e2function number pair(index, index2)
+    if index < 0 or index != math.floor(index) then return end
+    if index2 < 0 or index != math.floor(index2) then return end
+    return SzudzikPair(index, index2)
+end
+
+e2function array unpair(uuid)
+    if uuid != math.floor(uuid) or uuid < 0 then return end
+    return {SzudzikUnpair(uuid)}
 end
