@@ -5,6 +5,6 @@ ENT.Author = "Koleops"
 ENT.Spawnable = false
 
 function ENT:SetupDataTables()
-    self:NetworkVar("Int", 0, "Expression2_index")
-    self:NetworkVar("Int", 1, "Entity_index")
+    self:NetworkVar("Entity", 0, "Chip")
+    self:NetworkVar("Int", 0, "Index")
 end

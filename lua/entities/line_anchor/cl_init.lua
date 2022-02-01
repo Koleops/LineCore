@@ -1,125 +1,175 @@
 include("shared.lua")
 
-/* ------------------------------ Functions ------------------------------ */
-
-local LineIndex = {} 
+local AnchorIndex = {}
 local LineLink = {}
 
-local function SzudzikPair(x, y)
+local function pair(x, y)
     x, y = math.min(x, y), math.max(x, y)
     return x >= y and x^2 + x + y or y^2 + x
 end
 
-local function SzudzikUnpair(z)
-    local sqrtz = math.floor(math.sqrt(z))
+local function unpair(uuid)
+    local sqrtz = math.floor(math.sqrt(uuid))
     local sqz = sqrtz^2
-
-    local x = z - sqz >= sqrtz and sqrtz or z - sqz
-    local y = z - sqz >= sqrtz and z - sqz - sqrtz or sqrtz
-
-    return x, y
+    return (uuid - sqz >= sqrtz and sqrtz or uuid - sqz), (uuid - sqz >= sqrtz and uuid - sqz - sqrtz or sqrtz)
 end
 
-/* ------------------------------ Entity ------------------------------ */
+-- ENTITY
 
 function ENT:Initialize()
-    local expression2_index = self:GetExpression2_index()
-    LineIndex[expression2_index] = LineIndex[expression2_index] or {}
-    LineIndex[expression2_index][self:GetEntity_index()] = self
+    local chip = self:GetChip()
+
+    if not IsValid(chip) then
+        self:Remove()
+        return
+    end
+
+    AnchorIndex[chip:EntIndex()] = AnchorIndex[chip:EntIndex()] or {}
+    AnchorIndex[chip:EntIndex()][self:GetIndex()] = self
+
+    chip:CallOnRemove("LineCoreChipDestruct", function(ent, index)
+        AnchorIndex[index] = nil
+        LineLink[index] = nil
+    end, chip:EntIndex())
 end
 
 function ENT:OnRemove()
-    local expression2_index = self:GetExpression2_index()
-    local index = self:GetEntity_index()
+    local chip = self:GetChip()
+    if not IsValid(chip) then return end
 
-    if LineIndex[expression2_index] then
-        LineIndex[expression2_index][index] = nil
+    local chip_index = chip:EntIndex()
+    local index = self:GetIndex()
+
+    if AnchorIndex[chip_index] then
+        AnchorIndex[chip_index][index] = nil
     end
 
-    if LineLink[expression2_index] then
-        for uuid,_ in pairs(LineLink[expression2_index]) do
-            local x, y = SzudzikUnpair(uuid)
+    if LineLink[chip_index] then
+        for uuid,_ in pairs(LineLink[chip_index]) do
+            local x, y = unpair(uuid)
 
             if x == index or y == index then
-                LineLink[expression2_index][uuid] = nil
+                LineLink[chip_index][uuid] = nil
             end
         end
     end
 end
 
-/* ------------------------------ Network ------------------------------ */
+-- NETWORK
 
 net.Receive("LineCoreSync", function()
-    if net.ReadBool() then 
+    if net.ReadBool() then
         local count = 0
         for _,lines in pairs(LineLink) do
             count = count + table.Count(lines)
         end
-        if net.ReadUInt(14) != count then
-            print("BAD WOLF")
-            net.Start("LineCoreSync")
-            net.SendToServer()
-        end
+
+        if net.ReadUInt(14) == count then return end
+
+        net.Start("LineCoreSync")
+        net.SendToServer()
+
+        MsgC(Color(177, 12, 0), "BAD WOLF\n")
         return
     end
 
     local len = net.ReadUInt(16)
-    LineLink = util.JSONToTable(util.Decompress(net.ReadData(len)))
+
+    local json = util.Decompress(net.ReadData(len))
+    local data = util.JSONToTable(json)
+
+    for chip,lines in pairs(data) do
+        if not AnchorIndex[chip] then goto skip_chip end
+        LineLink[chip] = {}
+
+        for uuid,line in pairs(lines) do
+            local x, y = unpair(uuid)
+
+            if not AnchorIndex[chip][x] or not AnchorIndex[chip][y] then goto skip_line end
+            if not IsValid(AnchorIndex[chip][x]) or not IsValid(AnchorIndex[chip][y]) then goto skip_line end
+
+            LineLink[chip][uuid] = {
+                color = line.color or nil,
+                zbuffer = line.zbuffer or nil
+            }
+            ::skip_line::
+        end
+        ::skip_chip::
+    end
 end)
 
-net.Receive("LineCoreClean", function()
-    LineLink[net.ReadUInt(14)] = nil
-end)
-
-net.Receive("LineCoreCreateLine", function()
+net.Receive("LineCoreCreate", function()
     local len = net.ReadUInt(16)
-    local data = net.ReadData(len)
-    data = util.JSONToTable(util.Decompress(data))
-    
-    for expression2_index,__ in pairs(data) do
-        LineLink[expression2_index] = LineLink[expression2_index] or {}
-        for _,w in pairs(__) do
-            local index, index2 = SzudzikUnpair(w.uuid) 
+    local json = util.Decompress(net.ReadData(len))
+    local data = util.JSONToTable(json)
 
-            LineLink[expression2_index][w.uuid] = {
-                color = w.color or nil,
-                zbuffer = w.zbuffer or nil
-            }                
+    for chip,lines in pairs(data) do
+        if not AnchorIndex[chip] then goto skip_chip end
+        LineLink[chip] = LineLink[chip] or {}
+
+        for uuid,line in pairs(lines) do
+            local x, y = unpair(uuid)
+
+            if not AnchorIndex[chip][x] or not AnchorIndex[chip][y] then goto skip_line end
+            if not IsValid(AnchorIndex[chip][x]) or not IsValid(AnchorIndex[chip][y]) then goto skip_line end
+
+            LineLink[chip][uuid] = {
+                color = line.color or nil,
+                zbuffer = line.zbuffer or nil
+            }
+            ::skip_line::
         end
+        ::skip_chip::
     end
 end)
 
-net.Receive("LineCoreRemoveLine", function()
-    local expression2_index = net.ReadUInt(14)
-    if not LineLink[expression2_index] then return end
+net.Receive("LineCoreDelete", function()
+    local chip = net.ReadUInt(14)
+
+    if not LineLink[chip] then return end
     local uuid = net.ReadUInt(32)
-    LineLink[expression2_index][uuid] = nil
+
+    LineLink[chip][uuid] = nil
 end)
 
-net.Receive("LineCoreSetColor", function()
-    local expression2_index = net.ReadUInt(14)
-    if not LineLink[expression2_index] then return end
-    local uuid = net.ReadUInt(32)   
-    if not LineLink[expression2_index][uuid] then return end
-    LineLink[expression2_index][uuid].color = net.ReadColor(false)
+net.Receive("LineCoreColor", function()
+    local chip = net.ReadUInt(14)
+
+    if not LineLink[chip] then return end
+    local uuid = net.ReadUInt(32)
+
+    if not LineLink[chip][uuid] then return end
+    LineLink[chip][uuid].color = net.ReadColor(false)
 end)
 
-/* ------------------------------ Render ------------------------------ */
+-- RENDER
 
-hook.Add("PostDrawOpaqueRenderables", "LineCoreHook", function()
-    for _, lines in pairs(LineLink) do
-        if not LineIndex[_] then continue end
-        for uuid, data in pairs(lines) do
-            local index, index2 = SzudzikUnpair(uuid)
-            local ent, ent2 = LineIndex[_][index], LineIndex[_][index2]
-            if not ent or not IsValid(ent) or not ent2 or not IsValid(ent2) then continue end
-            render.DrawLine(ent:GetPos(), ent2:GetPos(), data.color or Color(255, 255, 255), not tobool(data.zbuffer))
+hook.Add("PostDrawOpaqueRenderables", "LineCoreRender", function()
+    for chip,lines in pairs(LineLink) do
+        if not AnchorIndex[chip] then goto skip_chip end
+
+        for uuid,data in pairs(lines) do
+            local x, y = unpair(uuid)
+            local ent, _ent = AnchorIndex[chip][x], AnchorIndex[chip][y]
+
+            if not ent or not IsValid(ent) then goto skip_uuid end
+            if not _ent or not IsValid(_ent) then goto skip_uuid end
+
+            render.DrawLine(ent:GetPos(), _ent:GetPos(), data.color or Color(255, 255, 255), not tobool(data.zbuffer))
+
+            ::skip_uuid::
         end
+        ::skip_chip::
     end
 end)
 
-/* ------------------------------ Concommand ------------------------------ */
+-- CONCOMMAND
 
 concommand.Add("cl_linecore_clear_lines", function()
     LineLink = {}
+end)
+
+concommand.Add("cl_linecore_debug", function()
+    PrintTable(AnchorIndex)
+    PrintTable(LineLink)
 end)
